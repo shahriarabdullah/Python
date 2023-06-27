@@ -1,0 +1,139 @@
+##                  default
+##init
+units               real    
+dimension           3     
+boundary            p p f
+atom_style          full   #atomic
+#newton              off      
+log             log.benchmark
+
+##force field
+pair_style          lj/cut/coul/long 12.0
+
+bond_style 	    harmonic
+angle_style	    harmonic
+
+read_data eq44.data
+#read_restart restart_file2
+# System of BMIM + PF6- and ACN with coarbon electrodes
+# Potential parameters from J. Phys. Chem. B, 115.33 (2011): 16613-16618
+pair_coeff 1 1	1.126 5.06
+pair_coeff 1 2	0.83 4.72
+pair_coeff 1 3	0.311 4.235
+pair_coeff 1 4	0.701 5.05
+pair_coeff 1 5	0.654 4.33
+pair_coeff 1 6	0.336 4.23
+pair_coeff 1 7	0.336 4.18
+pair_coeff 1 8	0.249 4.215
+
+pair_coeff 2 2	0.612 4.38
+pair_coeff 2 3	0.229 3.895
+pair_coeff 2 4	0.517 4.71
+pair_coeff 2 5	0.482 3.99
+pair_coeff 2 6	0.248 3.89
+pair_coeff 2 7	0.248 3.84
+pair_coeff 2 8	0.183 3.875
+
+pair_coeff 3 3	0.086 3.41
+pair_coeff 3 4	0.194 4.225
+pair_coeff 3 5	0.181 3.505
+pair_coeff 3 6	0.093 3.405
+pair_coeff 3 7	0.093 3.355
+pair_coeff 3 8	0.069 3.39
+
+pair_coeff 4 4	0.437 5.04
+pair_coeff 4 5	0.40752 4.32
+pair_coeff 4 6	0.20944 4.22
+pair_coeff 4 7	0.20944 4.17
+pair_coeff 4 8	0.155 4.205
+
+pair_coeff 5 5	0.38002 3.6
+pair_coeff 5 6	0.19531 3.5
+pair_coeff 5 7	0.19531 3.45
+pair_coeff 5 8	0.14453 3.485
+
+pair_coeff 6 6	0.10038 3.4
+pair_coeff 6 7	0.10038 3.35
+pair_coeff 6 8	0.07428 3.385
+
+pair_coeff 7 7	0.10038 3.3
+pair_coeff 7 8	0.07428 3.335
+
+pair_coeff 8 8	0.0 3.37
+
+
+pair_modify shift yes
+
+group ele type 8
+group anion type 1
+group sol type 1 2 3 4 5 6 7 
+group cation type 2 3 4
+group mols type 2 3 4 5 6 7 
+group acn type 5 6 7
+
+kspace_style        pppm 1.0e-4
+kspace_modify       slab 5.0
+
+neighbor            2.0 bin
+neigh_modify check yes delay 0
+
+# timestep in fs
+timestep 1.5
+
+run_style           verlet
+
+thermo              50
+compute myTemp sol temp
+thermo_modify lost warn flush yes
+#thermo_style custom step c_myTemp press ke pe evdwl etail emol ecoul elong etotal
+compute myPress all pressure myTemp
+
+group eone molecule 1543
+group etwo molecule 1544
+
+
+fix wallhi all wall/lj93 zhi EDGE 0.19531 3.45 2.5
+fix walllo all wall/lj93 zlo EDGE 0.19531 3.45 2.5
+
+
+compute 1 eone property/atom q
+compute 2 etwo property/atom q
+compute 3 eone reduce sum c_1
+compute 4 etwo reduce sum c_2
+#compute myTemp sol temp
+#thermo_modify lost warn flush yes
+#thermo_style custom step c_myTemp press ke pe evdwl etail emol ecoul elong etotal
+thermo_style custom step c_myTemp c_myPress[1] c_myPress[2] c_myPress[3] c_myPress  press vol etotal c_3 c_4
+
+fix ens eone conp 1 etwo 1.394 1 electrode.txt matout
+
+fix thermostat44 sol langevin 400.0 400.0 100.0 351 # 456 = random seed
+fix 55 anion nve
+fix 65 mols rigid/nve molecule
+balance 1.0 shift z 20 1.0
+
+compute CHARGE all property/atom q
+compute CHUNK_ZBIN_ALL all chunk/atom bin/1d z lower 0.5
+fix CHARGE_DENSITY_FIX all ave/chunk 100 1000 100000 CHUNK_ZBIN_ALL c_CHARGE file out.charge_density
+
+compute binchunk sol chunk/atom bin/1d z center 0.5
+fix 1 sol ave/chunk 100 1 500 binchunk density/number file nd.profile
+
+dump 123 all custom 500 data.txt id mol type q x y z vx vy vz
+dump_modify 123 sort id
+dump 943 all xyz 500 pos333.xyz
+#dump 121 sol custom 10 qsol3 id mol type q x y z vx vy vz
+dump 2 ele custom 500 qfile2 id x y z q
+dump 150 all dcd 200 out_unwrapped.dcd
+dump_modify 150 unwrap yes
+dump 151 all dcd 200 out_wrapped.dcd
+
+#ns
+restart 10000 restart1 restart2
+run 9000000
+write_restart eq44_conp
+write_data eq44_conp.data
+
+unfix thermostat44
+unfix 55
+unfix 65
